@@ -1,0 +1,68 @@
+# Kinetiq Story — pipeline configuration
+# Edit this file any time to change style without touching code.
+
+channel:
+  name: "Kinetiq Story"
+  audience: "CSE students and tech enthusiasts"
+  youtube_channel_id: ""   # fill in your channel ID to enable history-based topic scoring
+
+topic_filter:
+  use_channel_history: true   # scores topics higher if they match words from your best-performing videos
+  # Topics are scored against these — higher score = made into a video first.
+  keywords_boost:
+    - weapon
+    - missile
+    - explosion
+    - failure
+    - collapse
+    - hack
+    - malfunction
+    - radiation
+    - satellite
+    - reactor
+    - virus
+    - crash
+    - meltdown
+    - blackout
+  keywords_avoid:
+    - wellness
+    - lifestyle
+    - relationship
+    - gentle
+    - mindfulness
+
+script:
+  segments: 20
+  seconds_per_segment: 5
+  words_per_segment_min: 11
+  words_per_segment_max: 14
+  forbidden_words:
+    - leverage
+    - utilize
+    - delve
+    - tapestry
+    - realm
+    - cutting-edge
+    - innovative
+    - multifaceted
+  silence_before_segment: 17
+  loop_last_segment_to_first: true
+
+voice:
+  provider: "edge-tts"
+  voice_id: "en-US-ChristopherNeural"
+  rate: "+5%"      # approximates 1.05x speed
+  pitch: "-15Hz"   # approximates medium-low pitch
+
+visuals:
+  provider: "ai"            # "ai" (Pollinations, free AI-generated images) | "pexels" | "pixabay"
+  orientation: "portrait"   # 9:16 safe zone
+  style_query_suffix: "photorealistic 8K cinematic dark macro, UE5 render style"
+
+audio:
+  ambience: "brown_noise"   # file expected at assets/ambience/brown_noise.mp3
+  no_music: true            # halal constraint — no instruments/synths/drums
+
+output:
+  local_dir: "output"
+  upload_to_drive: true

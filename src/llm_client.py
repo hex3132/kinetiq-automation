@@ -29,7 +29,7 @@ def call_llm(system_prompt, user_prompt, json_mode=True):
 def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-1.5-flash:generateContent?key={api_key}"
+        f"gemini-2.5-flash:generateContent?key={api_key}"
     )
     generation_config = {"temperature": 0.8}
     if json_mode:

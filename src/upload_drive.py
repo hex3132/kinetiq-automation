@@ -1,36 +1,30 @@
 """
 upload_drive.py
-Uploads the finished video + all generated text docs (editing checklist,
-Google Flow prompts, platform metadata) to a Google Drive folder using a
-free Google Cloud service account (Drive API has a generous free quota
-for personal use).
-
-Setup (one-time, see README):
-  1. Create a Google Cloud project (free) and enable the Drive API.
-  2. Create a service account, download its JSON key.
-  3. Share your target Drive folder with the service account's email
-     (looks like xxxx@yyyy.iam.gserviceaccount.com) as an Editor.
-  4. Put the JSON key content in the GOOGLE_SERVICE_ACCOUNT_JSON secret,
-     and the folder's ID in the GDRIVE_FOLDER_ID secret.
+Uploads the finished video + all generated text docs to Google Drive,
+using YOUR OWN Google account (via a refresh token) instead of a Service
+Account — a Service Account has zero storage quota on a personal Gmail
+account, which caused storageQuotaExceeded errors.
 """
 
 import os
-import tempfile
 
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 def _get_drive_service():
-    creds_json = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        f.write(creds_json)
-        creds_path = f.name
-
-    credentials = service_account.Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    credentials = Credentials(
+        token=None,
+        refresh_token=os.environ["GOOGLE_REFRESH_TOKEN"],
+        token_uri=TOKEN_URI,
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        scopes=SCOPES,
+    )
     return build("drive", "v3", credentials=credentials)
 
 
@@ -74,8 +68,6 @@ def upload_to_drive(video_path, script, config):
     upload_file(service, video_path, video_filename, folder_id, "video/mp4")
     upload_file(service, metadata_path, "metadata.txt", folder_id, "text/plain")
 
-    # These two are optional / best-effort (generated in steps 7-8 of main.py) —
-    # upload them if they exist, but never fail the whole run if they don't.
     optional_files = [
         ("output/google_flow_prompts.txt", "google_flow_prompts.txt"),
         ("output/platform_metadata.txt", "platform_metadata.txt"),

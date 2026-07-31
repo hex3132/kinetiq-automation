@@ -9,29 +9,25 @@ import requests
 
 WIKI_SEARCH = "https://en.wikipedia.org/w/api.php"
 WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/{}"
+HEADERS = {"User-Agent": "kinetiq-story-bot/1.0 (personal free automation project)"}
 
 
 def _wiki_search_title(query):
     params = {"action": "opensearch", "search": query, "limit": 1, "namespace": 0, "format": "json"}
-    resp = requests.get(WIKI_SEARCH, params=params, timeout=10)
+    resp = requests.get(WIKI_SEARCH, params=params, headers=HEADERS, timeout=10)
     resp.raise_for_status()
     titles = resp.json()[1]
     return titles[0] if titles else None
 
 
 def _wiki_summary(title):
-    resp = requests.get(WIKI_SUMMARY.format(title.replace(" ", "_")), timeout=10)
+    resp = requests.get(WIKI_SUMMARY.format(title.replace(" ", "_")), headers=HEADERS, timeout=10)
     if resp.ok:
         return resp.json().get("extract", "")
     return ""
 
 
 def research_topic(topic):
-    """
-    Returns a short block of grounding facts about `topic`. Empty string
-    if nothing found — the script generator just falls back to the LLM's
-    general knowledge in that case.
-    """
     notes = []
     try:
         title = _wiki_search_title(topic)

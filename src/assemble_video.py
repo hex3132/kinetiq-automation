@@ -34,7 +34,6 @@ def _ken_burns_clip(image_path, duration, zoom_amount=0.12):
     there's room to zoom without exposing edges.
     """
     base = ImageClip(image_path).set_duration(duration)
-    # Fit to frame first, oversized by zoom_amount for headroom
     base = base.resize(height=int(FRAME_SIZE[1] * (1 + zoom_amount)))
     if base.w < FRAME_SIZE[0]:
         base = base.resize(width=FRAME_SIZE[0] * (1 + zoom_amount))
@@ -44,25 +43,27 @@ def _ken_burns_clip(image_path, duration, zoom_amount=0.12):
 
     zoomed = base.resize(zoom)
     zoomed = zoomed.set_position(("center", "center"))
-    # Composite onto the target frame size, center-cropping any overhang
     return CompositeVideoClip([zoomed], size=FRAME_SIZE).set_duration(duration)
 
 
 def _build_segment_clip(seg, visual_path, audio_path, seconds_per_segment):
     audio_clip = AudioFileClip(audio_path)
+    # Use the VOICEOVER'S REAL length for this segment instead of forcing a
+    # fixed 5 seconds — edge-tts output is rarely exactly 5.000s, and forcing
+    # a duration that's longer than the real audio causes a read-past-end error.
+    duration = audio_clip.duration
 
     if visual_path and os.path.exists(visual_path) and visual_path.lower().endswith(IMAGE_EXTENSIONS):
-        video_clip = _ken_burns_clip(visual_path, seconds_per_segment)
+        video_clip = _ken_burns_clip(visual_path, duration)
     elif visual_path and os.path.exists(visual_path):
         video_clip = VideoFileClip(visual_path).without_audio()
         video_clip = video_clip.resize(height=FRAME_SIZE[1])
-        # Center-crop to 1080 width if the source is wider than that (safe zone)
         if video_clip.w > FRAME_SIZE[0]:
             x_center = video_clip.w / 2
             video_clip = video_clip.crop(x_center=x_center, width=FRAME_SIZE[0])
-        video_clip = video_clip.loop(duration=seconds_per_segment).subclip(0, seconds_per_segment)
+        video_clip = video_clip.loop(duration=duration).subclip(0, duration)
     else:
-        video_clip = ColorClip(size=FRAME_SIZE, color=(10, 10, 10), duration=seconds_per_segment)
+        video_clip = ColorClip(size=FRAME_SIZE, color=(10, 10, 10), duration=duration)
 
     text_clip = (
         TextClip(
@@ -75,11 +76,11 @@ def _build_segment_clip(seg, visual_path, audio_path, seconds_per_segment):
             align="center",
         )
         .set_position(("center", "center"))
-        .set_duration(seconds_per_segment)
+        .set_duration(duration)
     )
 
     composite = CompositeVideoClip([video_clip, text_clip], size=FRAME_SIZE)
-    composite = composite.set_audio(audio_clip.set_duration(seconds_per_segment))
+    composite = composite.set_audio(audio_clip)
     return composite
 
 
@@ -99,12 +100,10 @@ def assemble_video(script, visual_paths, audio_paths, config, out_path="output/f
 
     final = concatenate_videoclips(clips, method="compose")
 
-    # Layer in continuous ambience (brown noise / drone) under the voiceovers,
-    # per the halal-audio constraint: no instruments, synths, or drums.
     ambience_path = os.path.join("assets", "ambience", f"{config['audio']['ambience']}.mp3")
     if os.path.exists(ambience_path):
         ambience = AudioFileClip(ambience_path).fx(afx.audio_loop, duration=final.duration)
-        ambience = ambience.volumex(0.15)  # low-volume, sits under the voiceover
+        ambience = ambience.volumex(0.15)
         mixed_audio = CompositeAudioClip([final.audio, ambience])
         final = final.set_audio(mixed_audio)
     else:

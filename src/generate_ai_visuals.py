@@ -31,11 +31,11 @@ def _build_url(prompt, width, height, seed=None):
     return url
 
 
-def generate_image(prompt, out_path, width=1080, height=1920, seed=None, retries=3):
+def generate_image(prompt, out_path, width=1080, height=1920, seed=None, retries=2):
     url = _build_url(prompt, width, height, seed)
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(url, timeout=60)
+            resp = requests.get(url, timeout=45)
             resp.raise_for_status()
             with open(out_path, "wb") as f:
                 f.write(resp.content)

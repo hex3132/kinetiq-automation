@@ -43,7 +43,7 @@ def generate_image(prompt, out_path, width=1080, height=1920, seed=None, retries
         except Exception as e:
             print(f"[generate_ai_visuals] attempt {attempt}/{retries} failed for prompt "
                   f"'{prompt[:60]}...': {e}")
-            time.sleep(3)
+            time.sleep(2)
     return None
 
 

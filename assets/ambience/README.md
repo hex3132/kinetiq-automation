@@ -1,12 +1,18 @@
-# Ambience track goes here
+# Sound effect files go here
 
-Put a royalty-free, halal-compliant (no instruments/synths/drums) ambience
-track here named `brown_noise.mp3` (matching `audio.ambience` in config.yaml).
+Download these free SFX and place them here with EXACTLY these filenames.
 
-Free sources with no-instrument ambient/drone/noise tracks:
-- https://freesound.org (search "brown noise" or "submarine drone", filter by CC0 license)
-- https://pixabay.com/sound-effects/ (search "ambient drone" or "white noise")
+**Recommended source: https://mixkit.co/free-sound-effects/ — NO account,
+NO signup, NO login needed at all.** (Pixabay/Freesound both require a
+free account to download, which can be an extra hurdle depending on your
+region — Mixkit doesn't.)
 
-Download one, rename it to `brown_noise.mp3`, and commit it to this folder.
-If this file is missing, the pipeline still runs — it just ships the video
-without the background ambience layer, so check the run log.
+| Filename                | What to search on Mixkit          |
+|--------------------------|-------------------------------------|
+| `flash_whoosh.mp3`       | "whoosh" or "camera flash"          |
+| `mechanical_clank.mp3`   | "metal hit" or "mechanical"         |
+| `glitch_static.mp3`      | "glitch" or "digital error"         |
+| `laser_zap.mp3`          | "laser" or "sci-fi zap"             |
+| `deep_rumble.mp3`        | "rumble" or "impact boom"           |
+
+Missing any file is fine — that segment just skips SFX, nothing breaks.

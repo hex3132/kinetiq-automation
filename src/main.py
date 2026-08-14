@@ -31,13 +31,14 @@ def main():
     os.makedirs("output", exist_ok=True)
 
     print("=== Step 1: Picking topic (scored against channel history) ===")
-    topic = get_best_topic()
+    category = get_todays_category(config)
+    topic = get_best_topic(config=config, category=category)
 
     print("=== Step 2: Researching topic ===")
     research_notes = research_topic(topic)
 
     print("=== Step 3: Generating script ===")
-    script = generate_script(topic, config, research_notes)
+    script = generate_script(topic, config, research_notes, category)
     with open("output/script.json", "w") as f:
         json.dump(script, f, indent=2)
 

@@ -1,17 +1,9 @@
 """
 fetch_topics.py
-Rotates through topic categories by day of week (see config.yaml's
-topic_rotation), pulls candidate topics from that day's category-specific
-subreddits (via Reddit's free OAuth API — optional, see below) plus
-Hacker News and GDELT (both fully keyless, no account/signup needed at
-all), scores them, then hands the top candidates to an LLM to pick and
-REFRAME the single most viral-potential one into a punchy, on-theme title.
-
-Reddit needs a free developer app (reddit.com/prefs/apps), which some
-accounts/regions have trouble creating. That's fine — Reddit is entirely
-OPTIONAL here: if REDDIT_CLIENT_ID/SECRET aren't set, or Reddit fails for
-any reason, the pipeline just uses Hacker News + GDELT instead, no
-account or API key required for either.
+Rotates through topic categories by day of week, pulls candidate topics
+from that day's category-specific subreddits (optional) plus GDELT
+(keyless, always) and Hacker News (ONLY on tech-category days), plus any
+custom topic seeds you maintain yourself in config.yaml.
 """
 
 import os
@@ -155,6 +147,15 @@ def fetch_gdelt_titles(category, limit=20):
     return titles
 
 
+def get_custom_seed_titles(config, category):
+    seeds = list(config["topic_filter"].get("custom_topic_seeds", []))
+    if category:
+        seeds += category.get("custom_seeds", [])
+    if seeds:
+        print(f"[fetch_topics] Including {len(seeds)} custom seed topic(s)")
+    return seeds
+
+
 def score_topic(title, config, category, channel_keywords):
     title_lower = title.lower()
     score = 0
@@ -188,10 +189,11 @@ content category is: {category_style_note}
 Every topic must center on a physical danger, failure mode, or mechanism
 — something that could hurt, destroy, kill, or malfunction — explained
 through a specific real mechanism, not vague statements. Stay strictly
-within today's category above.
+within today's category above — do NOT drift into an unrelated category
+even if a candidate from another category looks more clickable.
 
 You will be given a list of candidate topics/headlines. Pick the ONE
-with the strongest viral potential for this category and style, then
+with the strongest viral potential for THIS category and style, then
 REWRITE it as a sharp, specific, curiosity-driving title — do not just
 copy the raw headline. The rewritten title should:
 - Fit today's category exactly
@@ -220,16 +222,26 @@ def reframe_topic_for_virality(top_candidates, category):
     return top_candidates[0]
 
 
-def get_best_topic(config_path="config.yaml"):
-    config = load_config(config_path)
-    category = get_todays_category(config)
+def get_best_topic(config=None, category=None, config_path="config.yaml"):
+    if config is None:
+        config = load_config(config_path)
+    if category is None:
+        category = get_todays_category(config)
 
     subreddits = category["subreddits"] if category else ["technology", "science", "space"]
-    all_titles = fetch_reddit_titles(subreddits) + fetch_hn_titles() + fetch_gdelt_titles(category)
+    is_tech_day = (category is None) or (category.get("name") == "tech")
+
+    all_titles = fetch_reddit_titles(subreddits) + fetch_gdelt_titles(category)
+    if is_tech_day:
+        all_titles += fetch_hn_titles()
+    else:
+        print("[fetch_topics] Skipping Hacker News today — not a tech-category day")
+
+    all_titles += get_custom_seed_titles(config, category)
 
     if not all_titles:
         topic = random.choice(FALLBACK_TOPIC_POOL)
-        print(f"[fetch_topics] Both sources failed — using fallback pool topic: {topic}")
+        print(f"[fetch_topics] All sources failed — using fallback pool topic: {topic}")
         return topic
 
     channel_keywords = get_channel_keywords(config)

@@ -10,7 +10,7 @@ import time
 import traceback
 import yaml
 
-from fetch_topics import get_best_topic
+from fetch_topics import get_best_topic, get_todays_category, load_config as load_topics_config
 from research_topic import research_topic
 from generate_script import generate_script
 from tts import generate_voiceovers

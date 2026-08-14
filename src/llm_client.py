@@ -22,20 +22,18 @@ def call_llm(system_prompt, user_prompt, json_mode=True):
         raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
 
-# Trimmed to model names that are ACTUALLY available on the free tier for
-# this project (gemini-2.5-flash / gemini-2.0-flash consistently 404'd —
-# not available on this key/region, so no point burning attempts on them).
 GEMINI_MODEL_CANDIDATES = [
     "gemini-flash-latest",
     "gemini-pro-latest",
 ]
 
-# On a 429 (rate limit), the model itself isn't broken — the free tier's
-# per-minute quota is just temporarily exhausted. Waiting briefly and
-# retrying the SAME model is far more likely to succeed than immediately
-# jumping to a different model (which shares the same per-project quota
-# anyway on Gemini's free tier).
-RATE_LIMIT_BACKOFF_SECONDS = [15, 30]
+# On a 429 (rate limit) or 503 (Google's servers temporarily overloaded),
+# the model itself isn't broken — waiting briefly and retrying the SAME
+# model is far more likely to succeed than immediately jumping to a
+# different model (which shares the same per-project quota anyway on
+# Gemini's free tier).
+RETRYABLE_STATUS_CODES = {429, 503}
+RATE_LIMIT_BACKOFF_SECONDS = [20, 40, 40]
 
 
 def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
@@ -63,18 +61,18 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                 if resp.status_code == 404:
                     print(f"[llm_client] Model '{model_name}' not found, trying next candidate...")
                     last_error = f"404 for {model_name}"
-                    break  # no point retrying a model that doesn't exist — move to next model
+                    break
 
-                if resp.status_code == 429:
-                    last_error = f"429 for {model_name}"
+                if resp.status_code in RETRYABLE_STATUS_CODES:
+                    last_error = f"{resp.status_code} for {model_name}"
                     if backoff_attempt < len(RATE_LIMIT_BACKOFF_SECONDS):
                         wait_s = RATE_LIMIT_BACKOFF_SECONDS[backoff_attempt]
-                        print(f"[llm_client] Rate limited on '{model_name}', "
+                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', "
                               f"waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
                         time.sleep(wait_s)
-                        continue  # retry the SAME model after waiting
+                        continue
                     else:
-                        print(f"[llm_client] Still rate limited on '{model_name}' after backoff, trying next model...")
+                        print(f"[llm_client] Still failing on '{model_name}' after backoff, trying next model...")
                         break
 
                 resp.raise_for_status()
@@ -114,5 +112,4 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
 
 
 def clean_json_text(raw):
-    """Strips markdown code fences some models add despite instructions not to."""
     return raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

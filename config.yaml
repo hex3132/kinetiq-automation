@@ -8,7 +8,6 @@ channel:
 
 topic_filter:
   use_channel_history: true   # scores topics higher if they match words from your best-performing videos
-  # Topics are scored against these — higher score = made into a video first.
   keywords_boost:
     - weapon
     - missile
@@ -30,6 +29,65 @@ topic_filter:
     - relationship
     - gentle
     - mindfulness
+  # Your own topic ideas — always included as candidates alongside whatever
+  # Reddit/HN/GDELT find. Add as many lines as you want, any time.
+  custom_topic_seeds:
+    - "How the human liver silently filters poison from your blood"
+    - "The exact moment a plane's wing fails mid-flight"
+
+# The channel rotates through these categories by day of the year, so it's
+# not the same flavor of topic every single day. Add/remove categories any
+# time — the rotation automatically adjusts to however many are listed.
+topic_rotation:
+  enabled: true
+  categories:
+    - name: "creatures"
+      style_note: "human body biology, animal or creature survival mechanisms, deadly biological adaptations"
+      subreddits: ["nature", "biology", "Awwducational", "AnimalsBeingBros"]
+      keywords_boost:
+        - venom
+        - predator
+        - parasite
+        - deadly
+        - extinct
+        - camouflage
+        - creature
+        - evolution
+        - survival
+        - toxic
+      # custom_seeds: []   # optional — topics only used on this category's day
+    - name: "tech"
+      style_note: "new technology, servers, hardware, software, or AI mechanisms and failures"
+      subreddits: ["technology", "programming", "hardware", "cybersecurity"]
+      keywords_boost:
+        - weapon
+        - missile
+        - explosion
+        - failure
+        - collapse
+        - hack
+        - malfunction
+        - radiation
+        - satellite
+        - reactor
+        - virus
+        - crash
+        - meltdown
+        - blackout
+    - name: "war_history"
+      style_note: "historical wars, battles, military mechanisms, or empires — real documented history"
+      subreddits: ["history", "WarshipPorn", "MilitaryHistory", "AskHistorians"]
+      keywords_boost:
+        - battle
+        - war
+        - invasion
+        - siege
+        - weapon
+        - empire
+        - military
+        - conquest
+        - ambush
+        - fortress
 
 script:
   segments: 20
@@ -62,6 +120,19 @@ visuals:
 audio:
   ambience: "brown_noise"   # file expected at assets/ambience/brown_noise.mp3
   no_music: true            # halal constraint — no instruments/synths/drums
+  sfx:
+    library:
+      flash: "flash_whoosh.mp3"
+      mechanical: "mechanical_clank.mp3"
+      glitch: "glitch_static.mp3"
+      laser: "laser_zap.mp3"
+      rumble: "deep_rumble.mp3"
+    keywords:
+      flash: ["flash", "whoosh", "neon"]
+      mechanical: ["clank", "mechanical", "metallic", "impact"]
+      glitch: ["glitch", "static"]
+      laser: ["laser", "zap", "electronic"]
+      rumble: ["rumble", "boom", "explosion", "thrum", "drone swell"]
 
 output:
   local_dir: "output"

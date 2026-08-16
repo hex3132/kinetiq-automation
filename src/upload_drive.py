@@ -1,12 +1,12 @@
 """
 upload_drive.py
-Uploads the finished video + all generated text docs to Google Drive,
-using YOUR OWN Google account (via a refresh token) instead of a Service
-Account — a Service Account has zero storage quota on a personal Gmail
-account, which caused storageQuotaExceeded errors.
+Uploads the finished video + all generated text docs + the raw humanized
+voiceover audio files to Google Drive, using YOUR OWN Google account (via
+a refresh token) instead of a Service Account.
 """
 
 import os
+import zipfile
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -54,7 +54,15 @@ def write_metadata_file(script, out_path="output/metadata.txt"):
     return out_path
 
 
-def upload_to_drive(video_path, script, config):
+def zip_voiceovers(audio_paths, out_path="output/voiceovers.zip"):
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for seg_num, path in sorted(audio_paths.items()):
+            if path and os.path.exists(path):
+                zf.write(path, arcname=os.path.basename(path))
+    return out_path
+
+
+def upload_to_drive(video_path, script, config, audio_paths=None):
     if not config["output"].get("upload_to_drive", True):
         print("[upload_drive] Skipping Drive upload (disabled in config.yaml)")
         return
@@ -67,6 +75,12 @@ def upload_to_drive(video_path, script, config):
     video_filename = os.path.basename(video_path)
     upload_file(service, video_path, video_filename, folder_id, "video/mp4")
     upload_file(service, metadata_path, "metadata.txt", folder_id, "text/plain")
+
+    if audio_paths:
+        zip_path = zip_voiceovers(audio_paths)
+        upload_file(service, zip_path, "voiceovers.zip", folder_id, "application/zip")
+    else:
+        print("[upload_drive] No audio_paths provided — skipping voiceovers.zip")
 
     optional_files = [
         ("output/google_flow_prompts.txt", "google_flow_prompts.txt"),

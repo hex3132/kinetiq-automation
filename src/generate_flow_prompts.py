@@ -1,26 +1,8 @@
 """
 generate_flow_prompts.py
-Generates ready-to-paste JSON prompts for Google Flow (Veo 3), following
-your exact "Expert AI Video Producer" template — one JSON block per
-10-second chunk of the video (Flow's own generation limit).
-
-IMPORTANT — read this before relying on it:
-  - Google Flow has NO public API for a script to call automatically.
-    It's a browser product tied to a Google AI Pro/Ultra subscription
-    (paid beyond a small free monthly allowance). There is no safe or
-    free way for this pipeline to submit prompts into Flow for you.
-  - Browser-automation tools exist that fake clicks inside Flow, but
-    that means putting your personal Google login into a public GitHub
-    Actions log — a real account-security risk — for a product you'd
-    still be paying for. That's why this script does NOT attempt that:
-    it generates the exact JSON prompts, you paste them into Flow
-    yourself, in your own browser, under your own login.
-  - Each chunk is grounded in your ACTUAL script's VO/on-screen text for
-    that time window, so the generated scene will genuinely match what
-    the voiceover is saying at that moment (not a generic guess).
-  - All 10 chunks are generated in a SINGLE LLM call so the model can
-    keep the main subject, color palette, and style consistent across
-    the whole video — copy them into Flow in order.
+Generates ready-to-paste JSON prompts for Google Flow (Veo 3), grounded
+in the actual script, with an explicit audio-overlay mapping since Flow
+only generates visuals, never your script's hook/explanation/emotion.
 """
 
 import json
@@ -126,7 +108,6 @@ def generate_flow_prompts(topic, script, config):
     flow_prompts = json.loads(clean_json_text(raw))
 
     if not isinstance(flow_prompts, list):
-        # Some models wrap it in a key despite instructions — try to recover
         flow_prompts = flow_prompts.get("prompts") or flow_prompts.get("chunks") or [flow_prompts]
 
     if len(flow_prompts) != num_chunks:
@@ -135,17 +116,48 @@ def generate_flow_prompts(topic, script, config):
     return flow_prompts
 
 
-def write_flow_prompts_file(flow_prompts, out_path="output/google_flow_prompts.txt"):
+def write_flow_prompts_file(flow_prompts, script, config, out_path="output/google_flow_prompts.txt"):
+    seconds_per_segment = config["script"]["seconds_per_segment"]
+    chunks = _group_into_chunks(script, seconds_per_segment, chunk_seconds=10)
+
     lines = [
         "GOOGLE FLOW PROMPTS — paste each block below into Google Flow, ONE AT A TIME, in order.",
-        "Each block generates a 10-second clip. Stitch the clips together in the order shown.",
-        "Note: Google Flow (Veo 3) requires a Google account and, beyond the free monthly",
-        "allowance, a paid Google AI Pro/Ultra plan — this file does not submit anything for you.",
+        "",
+        "*** IMPORTANT — READ THIS BEFORE YOU START ***",
+        "Google Flow (Veo) only generates VISUALS from these JSON prompts. It does NOT know",
+        "your script's hook, explanation, or emotion — that only exists in the separate",
+        "humanized voiceover audio files (voiceovers.zip, also uploaded to this Drive folder).",
+        "If you only use Flow's own generated clip audio, you will get NO hook, NO clear",
+        "explanation, and NO emotion — because none of that was ever given to Flow.",
+        "",
+        "TO GET A PROPER VIDEO, YOU MUST DO THIS MANUAL ASSEMBLY STEP:",
+        "1. Generate each 10-second clip below in Flow, download them in order.",
+        "2. In a video editor (CapCut/Clipchamp/etc), lay the Flow clips out in sequence.",
+        "3. MUTE Flow's own generated audio track on every clip (or lower it far under the",
+        "   voice — it was never written to match your script).",
+        "4. Unzip voiceovers.zip and place seg_01.mp3, seg_02.mp3, etc. on the timeline in",
+        "   order, back to back — see the per-chunk mapping below for which files match which",
+        "   10-second block.",
+        "5. Add the on-screen text overlays from metadata.txt / the on_screen_text values below",
+        "   as actual text layers.",
+        "6. Optionally layer the ambience track under everything at low volume.",
+        "",
+        "Each block generates a 10-second clip. Google Flow (Veo 3) requires a Google account",
+        "and, beyond the free monthly allowance, a paid Google AI Pro/Ultra plan.",
         "=" * 70,
     ]
+
     for i, prompt in enumerate(flow_prompts, start=1):
-        lines.append(f"\n--- PROMPT {i} of {len(flow_prompts)} (seconds {(i-1)*10}-{i*10}) ---\n")
+        chunk_segs = chunks[i - 1] if i - 1 < len(chunks) else []
+        audio_files = ", ".join(f"seg_{seg['seg']:02d}.mp3" for seg in chunk_segs)
+        emotions = ", ".join(f"{seg['seg']}={seg.get('emotion', 'authoritative')}" for seg in chunk_segs)
+
+        lines.append(f"\n--- PROMPT {i} of {len(flow_prompts)} (seconds {(i-1)*10}-{i*10}) ---")
+        lines.append(f"Overlay these audio files here, in order: {audio_files}")
+        lines.append(f"Emotion per segment (for your own reference while editing pacing): {emotions}")
+        lines.append("")
         lines.append(json.dumps(prompt, indent=2))
+
     with open(out_path, "w") as f:
         f.write("\n".join(lines))
     print(f"[generate_flow_prompts] Wrote {len(flow_prompts)} prompts -> {out_path}")

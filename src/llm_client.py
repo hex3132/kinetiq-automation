@@ -1,8 +1,9 @@
 """
 llm_client.py
-Shared free-tier LLM call helper (Gemini or Groq) used by every module that
-needs to call an LLM: generate_script.py, generate_flow_prompts.py,
-generate_platform_metadata.py, and fetch_topics.py's reframing step.
+Shared free-tier LLM call helper. Automatic fallback: if LLM_PROVIDER is
+"gemini" and Gemini fails entirely (daily quota exhausted, servers down),
+AND a GROQ_API_KEY secret is also set, this automatically retries on Groq
+instead of failing the whole pipeline.
 """
 
 import os
@@ -15,23 +16,21 @@ def call_llm(system_prompt, user_prompt, json_mode=True):
     api_key = os.environ["LLM_API_KEY"]
 
     if provider == "gemini":
-        return _call_gemini(system_prompt, user_prompt, api_key, json_mode)
+        try:
+            return _call_gemini(system_prompt, user_prompt, api_key, json_mode)
+        except Exception as e:
+            groq_key = os.environ.get("GROQ_API_KEY")
+            if groq_key:
+                print(f"[llm_client] Gemini failed entirely ({e}), falling back to Groq...")
+                return _call_groq(system_prompt, user_prompt, groq_key, json_mode)
+            raise
     elif provider == "groq":
         return _call_groq(system_prompt, user_prompt, api_key, json_mode)
     else:
         raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
 
-GEMINI_MODEL_CANDIDATES = [
-    "gemini-flash-latest",
-    "gemini-pro-latest",
-]
-
-# On a 429 (rate limit) or 503 (Google's servers temporarily overloaded),
-# the model itself isn't broken — waiting briefly and retrying the SAME
-# model is far more likely to succeed than immediately jumping to a
-# different model (which shares the same per-project quota anyway on
-# Gemini's free tier).
+GEMINI_MODEL_CANDIDATES = ["gemini-flash-latest", "gemini-pro-latest"]
 RETRYABLE_STATUS_CODES = {429, 503}
 RATE_LIMIT_BACKOFF_SECONDS = [20, 40, 40]
 
@@ -49,10 +48,7 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
 
     last_error = None
     for model_name in GEMINI_MODEL_CANDIDATES:
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model_name}:generateContent?key={api_key}"
-        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
 
         for backoff_attempt in range(len(RATE_LIMIT_BACKOFF_SECONDS) + 1):
             try:
@@ -67,8 +63,7 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                     last_error = f"{resp.status_code} for {model_name}"
                     if backoff_attempt < len(RATE_LIMIT_BACKOFF_SECONDS):
                         wait_s = RATE_LIMIT_BACKOFF_SECONDS[backoff_attempt]
-                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', "
-                              f"waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
+                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
                         time.sleep(wait_s)
                         continue
                     else:
@@ -85,10 +80,7 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                 print(f"[llm_client] Model '{model_name}' failed ({e}), trying next candidate...")
                 break
 
-    raise RuntimeError(
-        f"All Gemini model candidates failed. Last error: {last_error}. "
-        f"Tried: {GEMINI_MODEL_CANDIDATES}"
-    )
+    raise RuntimeError(f"All Gemini model candidates failed. Last error: {last_error}. Tried: {GEMINI_MODEL_CANDIDATES}")
 
 
 def _call_groq(system_prompt, user_prompt, api_key, json_mode):
@@ -108,6 +100,7 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
     resp = requests.post(url, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
+    print("[llm_client] Used Groq model: llama-3.3-70b-versatile")
     return data["choices"][0]["message"]["content"]
 
 

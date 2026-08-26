@@ -1,9 +1,13 @@
 """
 llm_client.py
-Shared free-tier LLM call helper. Automatic fallback: if LLM_PROVIDER is
-"gemini" and Gemini fails entirely (daily quota exhausted, servers down),
-AND a GROQ_API_KEY secret is also set, this automatically retries on Groq
-instead of failing the whole pipeline.
+Shared free-tier LLM call helper used by every module that needs an LLM.
+
+Automatic fallback: if LLM_PROVIDER is "gemini" and Gemini fails entirely
+(daily quota exhausted, servers down, etc.) AND a GROQ_API_KEY secret is
+also set, this automatically retries the same request on Groq instead of
+failing the whole pipeline. Set GROQ_API_KEY once and you never have to
+manually swap providers again when one runs out of free-tier quota for
+the day.
 """
 
 import os
@@ -30,7 +34,11 @@ def call_llm(system_prompt, user_prompt, json_mode=True):
         raise ValueError(f"Unknown LLM_PROVIDER: {provider}")
 
 
-GEMINI_MODEL_CANDIDATES = ["gemini-flash-latest", "gemini-pro-latest"]
+GEMINI_MODEL_CANDIDATES = [
+    "gemini-flash-latest",
+    "gemini-pro-latest",
+]
+
 RETRYABLE_STATUS_CODES = {429, 503}
 RATE_LIMIT_BACKOFF_SECONDS = [20, 40, 40]
 
@@ -48,7 +56,10 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
 
     last_error = None
     for model_name in GEMINI_MODEL_CANDIDATES:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:generateContent?key={api_key}"
+        )
 
         for backoff_attempt in range(len(RATE_LIMIT_BACKOFF_SECONDS) + 1):
             try:
@@ -63,7 +74,8 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                     last_error = f"{resp.status_code} for {model_name}"
                     if backoff_attempt < len(RATE_LIMIT_BACKOFF_SECONDS):
                         wait_s = RATE_LIMIT_BACKOFF_SECONDS[backoff_attempt]
-                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
+                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', "
+                              f"waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
                         time.sleep(wait_s)
                         continue
                     else:
@@ -80,7 +92,10 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                 print(f"[llm_client] Model '{model_name}' failed ({e}), trying next candidate...")
                 break
 
-    raise RuntimeError(f"All Gemini model candidates failed. Last error: {last_error}. Tried: {GEMINI_MODEL_CANDIDATES}")
+    raise RuntimeError(
+        f"All Gemini model candidates failed. Last error: {last_error}. "
+        f"Tried: {GEMINI_MODEL_CANDIDATES}"
+    )
 
 
 def _call_groq(system_prompt, user_prompt, api_key, json_mode):

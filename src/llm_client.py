@@ -7,8 +7,9 @@ Automatic fallback: if LLM_PROVIDER is "gemini" and Gemini fails entirely
 secret is also set, this automatically retries the same request on Groq.
 
 Both Gemini and Groq model candidate lists are tried in order and skip
-past any model that's been renamed/deprecated (404), so a provider
-retiring a model name doesn't break the whole pipeline.
+past any model that's been renamed/deprecated (404) or rejects the
+request (400), so a provider retiring a model name doesn't break the
+whole pipeline.
 """
 
 import os
@@ -114,11 +115,6 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # NOT sending response_format here — newer gpt-oss/qwen models on Groq
-    # return 400 Bad Request with response_format={"type":"json_object"}.
-    # Our system prompts already explicitly instruct "output ONLY valid JSON",
-    # and clean_json_text() strips any stray markdown fences, so plain
-    # prompting is enough without forcing that (currently unsupported) param.
     last_error = None
     for model_name in GROQ_MODEL_CANDIDATES:
         payload = {
@@ -128,6 +124,12 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.8,
+            # gpt-oss models are "reasoning" models that spend tokens thinking
+            # before answering — without these, reasoning can consume the
+            # whole budget and leave an EMPTY final answer. Low effort +
+            # a generous token cap leaves room for the actual JSON output.
+            "reasoning_effort": "low",
+            "max_completion_tokens": 4096,
         }
 
         try:
@@ -142,8 +144,13 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
                 continue
             resp.raise_for_status()
             data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            if not content or not content.strip():
+                print(f"[llm_client] Groq model '{model_name}' returned an empty response, trying next candidate...")
+                last_error = f"empty content from {model_name}"
+                continue
             print(f"[llm_client] Used Groq model: {model_name}")
-            return data["choices"][0]["message"]["content"]
+            return content
         except Exception as e:
             last_error = str(e)
             print(f"[llm_client] Groq model '{model_name}' failed ({e}), trying next candidate...")
@@ -154,5 +161,7 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
         f"Tried: {GROQ_MODEL_CANDIDATES}"
     )
 
+
 def clean_json_text(raw):
+    """Strips markdown code fences some models add despite instructions not to."""
     return raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

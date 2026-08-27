@@ -129,7 +129,7 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
             # whole budget and leave an EMPTY final answer. Low effort +
             # a generous token cap leaves room for the actual JSON output.
             "reasoning_effort": "low",
-            "max_completion_tokens": 4096,
+            "max_completion_tokens": 8192,
         }
 
         try:

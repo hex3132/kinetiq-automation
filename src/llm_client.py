@@ -3,11 +3,12 @@ llm_client.py
 Shared free-tier LLM call helper used by every module that needs an LLM.
 
 Automatic fallback: if LLM_PROVIDER is "gemini" and Gemini fails entirely
-(daily quota exhausted, servers down, etc.) AND a GROQ_API_KEY secret is
-also set, this automatically retries the same request on Groq instead of
-failing the whole pipeline. Set GROQ_API_KEY once and you never have to
-manually swap providers again when one runs out of free-tier quota for
-the day.
+(daily quota exhausted, servers down, timeouts, etc.) AND a GROQ_API_KEY
+secret is also set, this automatically retries the same request on Groq.
+
+Both Gemini and Groq model candidate lists are tried in order and skip
+past any model that's been renamed/deprecated (404), so a provider
+retiring a model name doesn't break the whole pipeline.
 """
 
 import os
@@ -91,6 +92,10 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                 last_error = str(e)
                 print(f"[llm_client] Model '{model_name}' failed ({e}), trying next candidate...")
                 break
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                print(f"[llm_client] Network error on '{model_name}' ({e}), trying next candidate...")
+                break
 
     raise RuntimeError(
         f"All Gemini model candidates failed. Last error: {last_error}. "
@@ -98,25 +103,49 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
     )
 
 
+GROQ_MODEL_CANDIDATES = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant",
+]
+
+
 def _call_groq(system_prompt, user_prompt, api_key, json_mode):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.8,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
 
-    resp = requests.post(url, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-    print("[llm_client] Used Groq model: llama-3.3-70b-versatile")
-    return data["choices"][0]["message"]["content"]
+    last_error = None
+    for model_name in GROQ_MODEL_CANDIDATES:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.8,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            if resp.status_code == 404:
+                print(f"[llm_client] Groq model '{model_name}' not found, trying next candidate...")
+                last_error = f"404 for {model_name}"
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            print(f"[llm_client] Used Groq model: {model_name}")
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            last_error = str(e)
+            print(f"[llm_client] Groq model '{model_name}' failed ({e}), trying next candidate...")
+            continue
+
+    raise RuntimeError(
+        f"All Groq model candidates failed. Last error: {last_error}. "
+        f"Tried: {GROQ_MODEL_CANDIDATES}"
+    )
 
 
 def clean_json_text(raw):

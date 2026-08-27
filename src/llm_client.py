@@ -106,7 +106,7 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
 GROQ_MODEL_CANDIDATES = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
-    "llama-3.1-8b-instant",
+    "qwen/qwen3.6-27b",
 ]
 
 
@@ -114,6 +114,11 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
+    # NOT sending response_format here — newer gpt-oss/qwen models on Groq
+    # return 400 Bad Request with response_format={"type":"json_object"}.
+    # Our system prompts already explicitly instruct "output ONLY valid JSON",
+    # and clean_json_text() strips any stray markdown fences, so plain
+    # prompting is enough without forcing that (currently unsupported) param.
     last_error = None
     for model_name in GROQ_MODEL_CANDIDATES:
         payload = {
@@ -124,14 +129,16 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
             ],
             "temperature": 0.8,
         }
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
 
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
             if resp.status_code == 404:
                 print(f"[llm_client] Groq model '{model_name}' not found, trying next candidate...")
                 last_error = f"404 for {model_name}"
+                continue
+            if resp.status_code == 400:
+                print(f"[llm_client] Groq model '{model_name}' rejected the request (400: {resp.text[:200]}), trying next candidate...")
+                last_error = f"400 for {model_name}"
                 continue
             resp.raise_for_status()
             data = resp.json()
@@ -146,7 +153,6 @@ def _call_groq(system_prompt, user_prompt, api_key, json_mode):
         f"All Groq model candidates failed. Last error: {last_error}. "
         f"Tried: {GROQ_MODEL_CANDIDATES}"
     )
-
 
 def clean_json_text(raw):
     return raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

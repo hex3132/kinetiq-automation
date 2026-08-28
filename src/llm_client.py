@@ -7,9 +7,9 @@ Automatic fallback: if LLM_PROVIDER is "gemini" and Gemini fails entirely
 secret is also set, this automatically retries the same request on Groq.
 
 Both Gemini and Groq model candidate lists are tried in order and skip
-past any model that's been renamed/deprecated (404) or rejects the
-request (400), so a provider retiring a model name doesn't break the
-whole pipeline.
+past any model that's been renamed/deprecated (404), rejects the request
+(400), or is too large for the free tier (413), so a provider retiring or
+restricting a model doesn't break the whole pipeline.
 """
 
 import os
@@ -76,92 +76,3 @@ def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
                     last_error = f"{resp.status_code} for {model_name}"
                     if backoff_attempt < len(RATE_LIMIT_BACKOFF_SECONDS):
                         wait_s = RATE_LIMIT_BACKOFF_SECONDS[backoff_attempt]
-                        print(f"[llm_client] Got {resp.status_code} on '{model_name}', "
-                              f"waiting {wait_s}s before retry ({backoff_attempt + 1}/{len(RATE_LIMIT_BACKOFF_SECONDS)})...")
-                        time.sleep(wait_s)
-                        continue
-                    else:
-                        print(f"[llm_client] Still failing on '{model_name}' after backoff, trying next model...")
-                        break
-
-                resp.raise_for_status()
-                data = resp.json()
-                print(f"[llm_client] Used Gemini model: {model_name}")
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-
-            except requests.exceptions.HTTPError as e:
-                last_error = str(e)
-                print(f"[llm_client] Model '{model_name}' failed ({e}), trying next candidate...")
-                break
-            except requests.exceptions.RequestException as e:
-                last_error = str(e)
-                print(f"[llm_client] Network error on '{model_name}' ({e}), trying next candidate...")
-                break
-
-    raise RuntimeError(
-        f"All Gemini model candidates failed. Last error: {last_error}. "
-        f"Tried: {GEMINI_MODEL_CANDIDATES}"
-    )
-
-
-GROQ_MODEL_CANDIDATES = [
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "qwen/qwen3.6-27b",
-]
-
-
-def _call_groq(system_prompt, user_prompt, api_key, json_mode):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-    last_error = None
-    for model_name in GROQ_MODEL_CANDIDATES:
-        payload = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.8,
-            # gpt-oss models are "reasoning" models that spend tokens thinking
-            # before answering — without these, reasoning can consume the
-            # whole budget and leave an EMPTY final answer. Low effort +
-            # a generous token cap leaves room for the actual JSON output.
-            "reasoning_effort": "low",
-            "max_completion_tokens": 8192,
-        }
-
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=60)
-            if resp.status_code == 404:
-                print(f"[llm_client] Groq model '{model_name}' not found, trying next candidate...")
-                last_error = f"404 for {model_name}"
-                continue
-            if resp.status_code == 400:
-                print(f"[llm_client] Groq model '{model_name}' rejected the request (400: {resp.text[:200]}), trying next candidate...")
-                last_error = f"400 for {model_name}"
-                continue
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            if not content or not content.strip():
-                print(f"[llm_client] Groq model '{model_name}' returned an empty response, trying next candidate...")
-                last_error = f"empty content from {model_name}"
-                continue
-            print(f"[llm_client] Used Groq model: {model_name}")
-            return content
-        except Exception as e:
-            last_error = str(e)
-            print(f"[llm_client] Groq model '{model_name}' failed ({e}), trying next candidate...")
-            continue
-
-    raise RuntimeError(
-        f"All Groq model candidates failed. Last error: {last_error}. "
-        f"Tried: {GROQ_MODEL_CANDIDATES}"
-    )
-
-
-def clean_json_text(raw):
-    """Strips markdown code fences some models add despite instructions not to."""
-    return raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

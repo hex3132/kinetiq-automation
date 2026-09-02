@@ -28,7 +28,7 @@ GEMINI_MODEL_CANDIDATES = [
 ]
 
 RETRYABLE_STATUS_CODES = {429, 503}
-RATE_LIMIT_BACKOFF_SECONDS = [20, 40, 40]
+RATE_LIMIT_BACKOFF_SECONDS = [15, 25]
 
 
 def _call_gemini(system_prompt, user_prompt, api_key, json_mode):
